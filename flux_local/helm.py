@@ -60,6 +60,7 @@ from .manifest import (
     GitRepository,
 )
 from .source_controller.artifact import GitArtifact
+from .source_controller.helm_deps import build_helm_dependencies
 from .exceptions import HelmException
 
 __all__ = [
@@ -329,6 +330,13 @@ class Helm:
             iter([repo for repo in self._repos if repo.repo_name == release.repo_name]),
             None,
         )
+        # Build dependencies for local Git repository charts
+        if (release.chart.repo_kind == GIT_REPOSITORY and 
+            isinstance(repo, LocalGitRepository)):
+            chart_path = Path(repo.artifact.local_path) / release.chart.name
+            _LOGGER.debug("Building dependencies for local chart at %s", chart_path)
+            await build_helm_dependencies(str(chart_path))
+
         with empty_registry_config_file():
             args: list[str] = [
                 HELM_BIN,
