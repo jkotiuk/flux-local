@@ -7,6 +7,7 @@ from flux_local.manifest import GitRepository
 
 from .artifact import GitArtifact
 from .cache import get_git_cache
+from .helm_deps import build_helm_dependencies
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +63,10 @@ async def fetch_git(obj: GitRepository) -> GitArtifact:
             elif obj.ref.branch:
                 _LOGGER.info(f"Checking out branch {obj.ref.branch}")
                 repo.git.checkout(obj.ref.branch)
+
+        # Build Helm chart dependencies if any charts are found
+        _LOGGER.debug("Checking for Helm charts with dependencies in %s", repo_path)
+        await build_helm_dependencies(str(repo_path))
 
         # Return the artifact with the actual path and URL
         return GitArtifact(
