@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from flux_local.exceptions import InputException
-from flux_local.helm import Helm, Options, LocalGitRepository
+from flux_local.helm import Helm, Options, LocalGitRepository, LocalOCIRepository
 from flux_local.manifest import (
     NamedResource,
     BaseManifest,
@@ -26,7 +26,7 @@ from flux_local.manifest import (
     parse_raw_obj,
 )
 from flux_local.store import Store, StoreEvent, Status, Artifact
-from flux_local.source_controller import GitArtifact
+from flux_local.source_controller import GitArtifact, OCIArtifact
 from flux_local.task import get_task_service
 
 from .artifact import HelmReleaseArtifact
@@ -85,17 +85,28 @@ class HelmReleaseController:
     def _artifact_listener(
         self, resource_id: NamedResource, artifact: Artifact
     ) -> None:
-        """Event listener for new GitRepository GitArtifact objects."""
+        """Event listener for new GitRepository and OCIRepository artifact objects."""
         _LOGGER.debug(
-            "GitRepository %s artifact updated, artifact=%s", resource_id, artifact
+            "Repository %s artifact updated, artifact=%s", resource_id, artifact
         )
-        if resource_id.kind != "GitRepository" or not isinstance(artifact, GitArtifact):
+        
+        # Handle GitRepository artifacts
+        if resource_id.kind == "GitRepository" and isinstance(artifact, GitArtifact):
+            if not (git_repo := self.store.get_object(resource_id, GitRepository)):
+                _LOGGER.error("GitRepository %s not found", resource_id)
+                return
+            self._need_update = True
+            self.helm.add_repo(LocalGitRepository(repo=git_repo, artifact=artifact))
             return
-        if not (git_repo := self.store.get_object(resource_id, GitRepository)):
-            _LOGGER.error("GitRepository %s not found", resource_id)
+        
+        # Handle OCIRepository artifacts
+        if resource_id.kind == "OCIRepository" and isinstance(artifact, OCIArtifact):
+            if not (oci_repo := self.store.get_object(resource_id, OCIRepository)):
+                _LOGGER.error("OCIRepository %s not found", resource_id)
+                return
+            self._need_update = True
+            self.helm.add_repo(LocalOCIRepository(repo=oci_repo, artifact=artifact))
             return
-        self._need_update = True
-        self.helm.add_repo(LocalGitRepository(repo=git_repo, artifact=artifact))
 
     async def close(self) -> None:
         """Clean up resources used by the controller."""

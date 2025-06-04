@@ -9,10 +9,10 @@ import pytest
 import git
 import yaml
 
-from flux_local.manifest import GitRepository, NamedResource
+from flux_local.manifest import GitRepository, OCIRepository, NamedResource
 from flux_local.store.in_memory import InMemoryStore
 from flux_local.store.status import Status
-from flux_local.source_controller import GitArtifact, SourceController
+from flux_local.source_controller import GitArtifact, OCIArtifact, SourceController
 from flux_local.source_controller.helm_deps import build_helm_dependencies
 from flux_local.task import task_service_context, TaskService
 
@@ -421,3 +421,109 @@ dependencies:
         
         with pytest.raises(HelmException):
             await build_helm_dependencies(str(temp_dir))
+
+
+@pytest.mark.asyncio
+async def test_local_oci_repository_dependency_build(temp_dir: Path) -> None:
+    """Test that LocalOCIRepository charts have dependencies built during helm template."""
+    from flux_local.helm import Helm, LocalOCIRepository
+    from flux_local.manifest import HelmRelease, HelmChart
+    from flux_local.source_controller.artifact import OCIArtifact
+    
+    # Create a test chart with dependencies
+    chart_dir = temp_dir / "test-oci-chart"
+    chart_dir.mkdir()
+    
+    chart_yaml = chart_dir / "Chart.yaml"
+    chart_yaml.write_text("""
+apiVersion: v2
+name: test-oci-chart
+description: An OCI chart with dependencies
+version: 1.0.0
+
+dependencies:
+  - name: nginx
+    version: "15.4.4"
+    repository: "https://charts.bitnami.com/bitnami"
+    """.strip())
+    
+    # Create basic templates
+    templates_dir = chart_dir / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "deployment.yaml").write_text("""
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+      - name: test
+        image: nginx:latest
+    """.strip())
+    
+    # Create mock objects
+    oci_repo = OCIRepository(
+        name="test-oci-repo",
+        namespace="default",
+        url="oci://example.com/charts",
+    )
+    
+    oci_artifact = OCIArtifact(
+        url=oci_repo.url,
+        local_path=str(temp_dir),
+    )
+    
+    local_oci_repo = LocalOCIRepository(repo=oci_repo, artifact=oci_artifact)
+    
+    helm_release = HelmRelease(
+        name="test-release",
+        namespace="default",
+        chart=HelmChart(
+            name="test-oci-chart",
+            version="1.0.0",
+            repo_name="test-oci-repo",  # This matches the OCIRepository name
+            repo_namespace="default",   # This matches the OCIRepository namespace
+            repo_kind="OCIRepository",
+        ),
+        target_namespace="default",
+    )
+    
+    # Set up Helm instance
+    helm_tmp_dir = temp_dir / "helm"
+    helm_cache_dir = temp_dir / "cache"
+    helm_tmp_dir.mkdir()
+    helm_cache_dir.mkdir()
+    
+    helm = Helm(helm_tmp_dir, helm_cache_dir)
+    helm.add_repo(local_oci_repo)
+    
+    # Mock helm dependency build and helm template commands
+    with patch("flux_local.command.run") as mock_run:
+        mock_run.return_value = b""
+        
+        # This should trigger dependency building for the LocalOCIRepository
+        await helm.template(helm_release)
+        
+        # Verify that helm dependency build was called for the OCI chart
+        helm_calls = [call for call in mock_run.call_args_list 
+                     if len(call[0]) > 0 and call[0][0].cmd[0] == "helm"]
+        
+        # Should have at least one call for dependency build and one for template
+        dependency_calls = [call for call in helm_calls 
+                          if len(call[0][0].cmd) >= 3 and 
+                             call[0][0].cmd[1] == "dependency" and 
+                             call[0][0].cmd[2] == "build"]
+        
+        assert len(dependency_calls) >= 1, f"Expected dependency build call, got calls: {[call[0][0].cmd for call in helm_calls]}"
+        
+        # Verify the dependency build was called with correct working directory
+        dep_call = dependency_calls[0][0][0]
+        assert str(dep_call.cwd) == str(chart_dir)

@@ -59,13 +59,15 @@ from .manifest import (
     OCI_REPOSITORY,
     GitRepository,
 )
-from .source_controller.artifact import GitArtifact
+from .source_controller.artifact import GitArtifact, OCIArtifact
 from .source_controller.helm_deps import build_helm_dependencies
 from .exceptions import HelmException
 
 __all__ = [
     "Helm",
     "Options",
+    "LocalGitRepository",
+    "LocalOCIRepository",
 ]
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,6 +87,22 @@ class LocalGitRepository:
 
     artifact: GitArtifact
     """The GitArtifact object."""
+
+    @property
+    def repo_name(self) -> str:
+        """Return the name of the repository."""
+        return self.repo.repo_name
+
+
+@dataclass(kw_only=True, frozen=True)
+class LocalOCIRepository:
+    """An OCIRepository resolved to a local path."""
+
+    repo: OCIRepository
+    """The OCIRepository object."""
+
+    artifact: OCIArtifact
+    """The OCIArtifact object."""
 
     @property
     def repo_name(self) -> str:
@@ -130,7 +148,7 @@ def _get_registry_config_file() -> str:
 
 def _chart_name(
     release: HelmRelease,
-    repo: HelmRepository | OCIRepository | LocalGitRepository | None,
+    repo: HelmRepository | OCIRepository | LocalGitRepository | LocalOCIRepository | None,
 ) -> str:
     """Return the helm chart name used for the helm template command."""
     if release.chart.repo_kind == OCI_REPOSITORY:
@@ -141,6 +159,8 @@ def _chart_name(
             )
         if isinstance(repo, OCIRepository):
             return repo.url
+        if isinstance(repo, LocalOCIRepository):
+            return str(Path(repo.artifact.local_path) / release.chart.name)
         raise HelmException(
             f"HelmRelease {release.name} expected OCIRepository but got HelmRepository {repo.repo_name}"
         )
@@ -272,10 +292,10 @@ class Helm:
             "--repository-config",
             str(self._repo_config_file),
         ]
-        self._repos: list[HelmRepository | OCIRepository | LocalGitRepository] = []
+        self._repos: list[HelmRepository | OCIRepository | LocalGitRepository | LocalOCIRepository] = []
 
     def add_repo(
-        self, repo: HelmRepository | OCIRepository | LocalGitRepository
+        self, repo: HelmRepository | OCIRepository | LocalGitRepository | LocalOCIRepository
     ) -> None:
         """Add the specified HelmRepository to the local config."""
         self._repos.append(repo)
@@ -287,6 +307,7 @@ class Helm:
             | list[OCIRepository]
             | list[HelmRepository | OCIRepository]
             | list[HelmRepository | OCIRepository | LocalGitRepository]
+            | list[HelmRepository | OCIRepository | LocalGitRepository | LocalOCIRepository]
         ),
     ) -> None:
         """Add the specified HelmRepository to the local config."""
@@ -330,10 +351,18 @@ class Helm:
             iter([repo for repo in self._repos if repo.repo_name == release.repo_name]),
             None,
         )
-        # Build dependencies for local Git repository charts
+        # Build dependencies for local repository charts
+        # This applies to any chart source type that resolves to a local path,
+        # including Git repositories and OCI repositories that have been fetched locally
+        chart_path = None
         if (release.chart.repo_kind == GIT_REPOSITORY and 
             isinstance(repo, LocalGitRepository)):
             chart_path = Path(repo.artifact.local_path) / release.chart.name
+        elif (release.chart.repo_kind == OCI_REPOSITORY and 
+              isinstance(repo, LocalOCIRepository)):
+            chart_path = Path(repo.artifact.local_path) / release.chart.name
+        
+        if chart_path:
             _LOGGER.debug("Building dependencies for local chart at %s", chart_path)
             await build_helm_dependencies(str(chart_path))
 
