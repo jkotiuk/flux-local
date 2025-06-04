@@ -78,7 +78,7 @@ async def _build_chart_dependencies(chart_file: Path) -> None:
         args = [HELM_BIN, "dependency", "build"]
         cmd = command.Command(
             args,
-            cwd=str(chart_dir),
+            cwd=chart_dir,
             exc=HelmException
         )
         

@@ -229,7 +229,7 @@ async def test_git_repository_with_helm_charts(
             
             helm_cmd = helm_calls[0][0][0]
             assert helm_cmd.cmd == ["helm", "dependency", "build"]
-            assert "umbrella" in helm_cmd.cwd
+            assert "umbrella" in str(helm_cmd.cwd)
             
     finally:
         await controller.close()
