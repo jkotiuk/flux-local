@@ -249,7 +249,7 @@ spec:
     # Create LocalGitRepository object
     git_artifact = GitArtifact(
         url=git_repo_obj.url,
-        ref="v1.0.0",
+        ref=git_repo_obj.ref,
         local_path=str(repo_path),
     )
     local_git_repo = LocalGitRepository(
