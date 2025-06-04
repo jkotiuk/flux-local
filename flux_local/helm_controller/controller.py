@@ -89,7 +89,7 @@ class HelmReleaseController:
         _LOGGER.debug(
             "Repository %s artifact updated, artifact=%s", resource_id, artifact
         )
-        
+
         # Handle GitRepository artifacts
         if resource_id.kind == "GitRepository" and isinstance(artifact, GitArtifact):
             if not (git_repo := self.store.get_object(resource_id, GitRepository)):
@@ -98,7 +98,7 @@ class HelmReleaseController:
             self._need_update = True
             self.helm.add_repo(LocalGitRepository(repo=git_repo, artifact=artifact))
             return
-        
+
         # Handle OCIRepository artifacts
         if resource_id.kind == "OCIRepository" and isinstance(artifact, OCIArtifact):
             if not (oci_repo := self.store.get_object(resource_id, OCIRepository)):
