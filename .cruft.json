@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/allenporter/cookiecutter-python",
-  "commit": "d4d7489f399216b5c4e5c5f734455fe67bd54f5e",
+  "commit": "1842707db4692bca10f0988efe2d02772a25e3de",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -10,7 +10,8 @@
       "project_name": "flux_local",
       "description": "flux-local is a set of tools and libraries for managing a local flux gitops repository focused on validation steps to help improve quality of commits, PRs, and general local testing.",
       "version": "5.2.0",
-      "_template": "https://github.com/allenporter/cookiecutter-python"
+      "_template": "https://github.com/allenporter/cookiecutter-python",
+      "_commit": "1842707db4692bca10f0988efe2d02772a25e3de"
     }
   },
   "directory": null
